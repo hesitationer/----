@@ -26,14 +26,14 @@ void CMyDib::gaussSmooth(double *in, double *out, int size, int rowstride, gauss
 	w1 = (double*)GlobalAlloc(GMEM_ZEROINIT | GMEM_FIXED, buffsize * sizeof(double));
 	w2 = (double*)GlobalAlloc(GMEM_ZEROINIT | GMEM_FIXED, buffsize * sizeof(double));
 	w1[0] = in[0];
-	w1[1] = in[1];
-	w1[2] = in[2];
+	w1[1] = in[0];
+	w1[2] = in[0];
 	for (int i = 0, n = 3; i <= size; ++i, ++n)
 	{
 		w1[n] = (c->B * in[i * rowstride] + 
 				((c->b[1] * w1[n - 1] + 
 				  c->b[2] * w1[n - 2] + 
-				  c->b[3] * w2[n - 3] ) / c->b[0]));
+				  c->b[3] * w1[n - 3] ) ));
 	}
 	//逆向迭代
 	w2[size + 1] = w1[size + 3];
@@ -44,7 +44,7 @@ void CMyDib::gaussSmooth(double *in, double *out, int size, int rowstride, gauss
 		w2[n] = out[i * rowstride] = (c->B * w1[n] + 
 									((c->b[1] * w2[n + 1] + 
 									  c->b[2] * w2[n + 2] + 
-									  c->b[3] * w2[n + 3] ) / c->b[0]));
+									  c->b[3] * w2[n + 3] ) ));
 	}
 	GlobalFree(w1);
 	GlobalFree(w2);
@@ -67,166 +67,96 @@ void CMyDib::ImageProcess(HGLOBAL hDib)
 	double *r = (double *)::GlobalAlloc(GMEM_FIXED | GMEM_ZEROINIT, sizeof(double)*size);
 	double *g = (double *)::GlobalAlloc(GMEM_FIXED | GMEM_ZEROINIT, sizeof(double)*size);
 	double *b = (double *)::GlobalAlloc(GMEM_FIXED | GMEM_ZEROINIT, sizeof(double)*size);
+	double *t_r = (double *)::GlobalAlloc(GMEM_FIXED | GMEM_ZEROINIT, sizeof(double)*size);
+	double *t_g = (double *)::GlobalAlloc(GMEM_FIXED | GMEM_ZEROINIT, sizeof(double)*size);
+	double *t_b = (double *)::GlobalAlloc(GMEM_FIXED | GMEM_ZEROINIT, sizeof(double)*size);
 
 
-	double sqrt2pi = sqrt(2 * Pi);
-	int sigma1 = 2;
-	/*int sigma2 = 80;
-	int sigma3 = 250;
-	int n1 = 3 * sigma1;
-	int n2 = 3 * sigma2;
-	int n3 = 3 * sigma3;
-	int sigma12 = 2 * sigma1 * sigma1;
-	double sigma1p = sigma1 * sqrt2pi;
-	double *gauss = (double*)::GlobalAlloc(GMEM_FIXED | GMEM_ZEROINIT, sizeof(double)*(2 * n1 + 1));
-	for (int i = -n1; i <= n1; i++)
+	int sigma[3] = {80, 160, 240};
+	
+	for (int scale = 0; scale < 3; ++scale)
 	{
-		gauss[n1 + i] = exp(-(double)(i*i) / sigma12) / sigma1p;
-	}*/
-	double q, q2, q3;
-	q = 0.98711 * 2.5 - 0.96330;
-	q2 = q *q;
-	q3 = q * q2;
-	param.b[0] = (1.57825 + (2.44413 * q) + (1.4281 * q2) + (0.422205* q3));
-	param.b[1] = (			(2.44413 * q) + (2.85619* q2) + (1.26661 * q3));
-	param.b[2] = (						  - (1.4281 * q2) - (1.26661 * q3));
-	param.b[3] = (											(0.422205* q3));
-	param.B = 1.0 - ((param.b[1] + param.b[2] + param.b[3]) / param.b[0]);
-	param.sigma = sigma1;
-	param.N = 3;
+		double q, q2, q3;
+		q = 0.98711 * sigma[scale] - 0.96330;
+		q2 = q *q;
+		q3 = q * q2;
+		param.b[0] = (1.57825 + (2.44413 * q) + (1.4281 * q2) + (0.422205* q3));
+		param.b[1] = ((2.44413 * q) + (2.85619* q2) + (1.26661 * q3));
+		param.b[2] = (-(1.4281 * q2) - (1.26661 * q3));
+		param.b[3] = ((0.422205* q3));
+		param.B = 1.0 - ((param.b[1] + param.b[2] + param.b[3]) / param.b[0]);
+		param.sigma = sigma[scale];
+		param.N = 3;
+		param.b[1] /= param.b[0];
+		param.b[2] /= param.b[0];
+		param.b[3] /= param.b[0];
 
-	int pos = 0;
-	for (int i = 0; i < size; ++i)
-	{
-		R[i] += 1;
-	}
-	for (int row = 0; row < height; ++row)
-	{
-		pos = row * width;
-		gaussSmooth(R + pos, r + pos, width, 1, &param);
-	}
-	for (int col = 0; col < width; ++col)
-	{
-		pos = col;
-		gaussSmooth(r + pos, r + pos, height, width, &param);
-	}
-	for (int i = 0; i < size; ++i)
-	{
-		G[i] += 1;
-	}
-	for (int row = 0; row < height; ++row)
-	{
-		pos = row * width;
-		gaussSmooth(G + pos, g + pos, width, 1, &param);
-	}
-	for (int col = 0; col < width; ++col)
-	{
-		pos = col;
-		gaussSmooth(g + pos, g + pos, height, width, &param);
-	}
-	for (int i = 0; i < size; ++i)
-	{
-		B[i] += 1;
-	}
-	for (int row = 0; row < height; ++row)
-	{
-		pos = row * width;
-		gaussSmooth(B + pos, b + pos, width, 1, &param);
-	}
-	for (int col = 0; col < width; ++col)
-	{
-		pos = col;
-		gaussSmooth(b + pos, b + pos, height, width, &param);
-	}
-	////行方向
-	//for (LONGLONG inx = 0, y = 0; y < height; ++y)
-	//{
-	//	for (LONGLONG x = 0; x < width; ++x, ++inx)
-	//	{
-	//		for (int i = -n1; i <= n1; ++i)
-	//		{
-	//			LONGLONG i_x = x + i;
-	//			i_x = i_x < 0 ? -x : (i_x >= width ? width - 1 - x : i);
-	//			LONGLONG inx_x = inx + i_x;
-	//			t_r[inx] += R[inx_x] * gauss[n1 + i];
-	//		}
-	//	}
-	//}
-	//for (LONGLONG inx = 0, y = 0; y < height; ++y)
-	//{
-	//	for (LONGLONG x = 0; x < width; ++x, ++inx)
-	//	{
-	//		for (int i = -n1; i <= n1; ++i)
-	//		{
-	//			LONGLONG i_x = x + i;
-	//			i_x = i_x < 0 ? -x : (i_x >= width ? width - 1 - x : i);
-	//			LONGLONG inx_x = inx + i_x;
-	//			t_g[inx] += G[inx_x] * gauss[n1 + i];
-	//		}
-	//	}
-	//}
-	//for (LONGLONG inx = 0, y = 0; y < height; ++y)
-	//{
-	//	for (LONGLONG x = 0; x < width; ++x, ++inx)
-	//	{
-	//		for (int i = -n1; i <= n1; ++i)
-	//		{
-	//			LONGLONG i_x = x + i;
-	//			i_x = i_x < 0 ? -x : (i_x >= width ? width - 1 - x : i);
-	//			LONGLONG inx_x = inx + i_x;
-	//			t_b[inx] += B[inx_x] * gauss[n1 + i];
-	//		}
-	//	}
-	//}
-	////列方向
-	//for (LONGLONG iny = 0, x = 0; x < width; ++x)
-	//{
-	//	for (LONGLONG y = 0; y < height; ++y)
-	//	{
-	//		iny = y * width + x;
-	//		double temp_r = 0.0, temp_g = 0.0, temp_b = 0.0;
-	//		for (int i = -n1; i <= n1; ++i)
-	//		{
-	//			LONGLONG i_y = y + i;
-	//			i_y = i_y < 0 ? -y : (i_y >= height ? height - 1 - y : i);
-	//			LONGLONG iny_y = iny + i_y * width;
-	//			temp_r += t_r[iny_y] * gauss[n1 + i];
-	//			temp_g += t_g[iny_y] * gauss[n1 + i];
-	//			temp_b += t_b[iny_y] * gauss[n1 + i];
-	//		}
-	//		r[iny] = temp_r < 0.0 ? 0.0 : (temp_r > 255.0 ? 255.0 : temp_r);
-	//		g[iny] = temp_g < 0.0 ? 0.0 : (temp_g > 255.0 ? 255.0 : temp_g);
-	//		b[iny] = temp_b < 0.0 ? 0.0 : (temp_b > 255.0 ? 255.0 : temp_b);
-	//	}
-	//}
-
-
-	for (int i = 0; i < height; i++)
-	{
-		for (int j = 0; j < width; j++)
+		int pos = 0;
+		for (int i = 0; i < size; ++i)
 		{
-			R[i*width + j] = log(R[i*width + j]);
-			G[i*width + j] = log(G[i*width + j]);
-			B[i*width + j] = log(B[i*width + j]);
-			r[i*width + j] = log(r[i*width + j]);
-			g[i*width + j] = log(g[i*width + j]);
-			b[i*width + j] = log(b[i*width + j]);
-			R[i*width + j] -= r[i*width + j];
-			G[i*width + j] -= g[i*width + j];
-			B[i*width + j] -= b[i*width + j];
+			R[i] += 1;
+		}
+		for (int row = 0; row < height; ++row)
+		{
+			pos = row * width;
+			gaussSmooth(R + pos, r + pos, width, 1, &param);
+		}
+		for (int col = 0; col < width; ++col)
+		{
+			pos = col;
+			gaussSmooth(r + pos, r + pos, height, width, &param);
+		}
+		for (int i = 0; i < size; ++i)
+		{
+			G[i] += 1;
+		}
+		for (int row = 0; row < height; ++row)
+		{
+			pos = row * width;
+			gaussSmooth(G + pos, g + pos, width, 1, &param);
+		}
+		for (int col = 0; col < width; ++col)
+		{
+			pos = col;
+			gaussSmooth(g + pos, g + pos, height, width, &param);
+		}
+		for (int i = 0; i < size; ++i)
+		{
+			B[i] += 1;
+		}
+		for (int row = 0; row < height; ++row)
+		{
+			pos = row * width;
+			gaussSmooth(B + pos, b + pos, width, 1, &param);
+		}
+		for (int col = 0; col < width; ++col)
+		{
+			pos = col;
+			gaussSmooth(b + pos, b + pos, height, width, &param);
+		}
+		
+
+		for (int i = 0; i < height; i++)
+		{
+			for (int j = 0; j < width; j++)
+			{
+				t_r[i*width + j] += (log(R[i*width + j]) - log(r[i*width + j])) / 3;
+				t_g[i*width + j] += (log(G[i*width + j]) - log(g[i*width + j])) / 3;
+				t_b[i*width + j] += (log(B[i*width + j]) - log(b[i*width + j])) / 3;
+			}
 		}
 	}
-	/*double alpha = 128.;
+	double alpha = 128.;
 	double gain = 1.;
 	double offset = 0.;
 	for (int i = 0; i < size; ++i)
 	{
 		double logl = 0.0;
-		logl = log(R[i] + g[i] + B[i]);
-		R[i] = gain * ((log(alpha * R[i]) - logl) * (R[i] - 1)) + offset;
-		G[i] = gain * ((log(alpha * G[i]) - logl) * (G[i] - 1)) + offset;
-		B[i] = gain * ((log(alpha * B[i]) - logl) * (B[i] - 1)) + offset;
-	}*/
+		logl = log(R[i] + G[i] + B[i]);
+		R[i] = gain * ((log(alpha * R[i]) - logl) * t_r[i]) + offset;
+		G[i] = gain * ((log(alpha * G[i]) - logl) * t_g[i]) + offset;
+		B[i] = gain * ((log(alpha * B[i]) - logl) * t_b[i]) + offset;
+	}
 
 	double mean_r = 0.0, mean_g = 0.0, mean_b = 0.0;
 	double var_r = 0.0, var_g = 0.0, var_b = 0.0;
@@ -306,6 +236,9 @@ void CMyDib::ImageProcess(HGLOBAL hDib)
 	::GlobalFree(r);
 	::GlobalFree(g);
 	::GlobalFree(b);
+	::GlobalFree(t_r);
+	::GlobalFree(t_g);
+	::GlobalFree(t_b);
 	//::GlobalFree(gauss);
 	::GlobalUnlock(hDib);
 }
